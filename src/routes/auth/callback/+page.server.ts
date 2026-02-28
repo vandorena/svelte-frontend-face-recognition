@@ -58,49 +58,18 @@ export const load: PageServerLoad = async ({ url, cookies, fetch }) => {
     const data = await tokenResponse.json();
     const accessToken = data.access_token;
 
-    const user_info = await fetch(`https://openidconnect.googleapis.com/v1/userinfo`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`
-            }
-        });
+    cookies.set('accessToken', accessToken, {
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: !dev,
+        maxAge: 60 * 60 * 24 * 30
+    });
 
-        if (!user_info.ok) {
-            console.error('Failed to fetch user info from Google');
-            throw redirect(302, '/');
-        }
-
-        const user_profile = await user_info.json();
-        console.log('User fetched successfully from Google:', user_profile);
-
-        const userResponse = await fetch(`http://${BACKEND_DOMAIN_NAME}/users/${encodeURIComponent(user_profile.sub)}`, {
-            headers: {
-                'Authorization': `${BEARER_TOKEN_BACKEND}`
-            }
-        });
-
-        let user = await userResponse;
-
-        console.log(user)
-
-        if (userResponse.status === 422 || userResponse.status === 503) {
-            console.log('User not found for sub, creating new user');
-            const createUser = await fetch(`http://${BACKEND_DOMAIN_NAME}/users`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `${BEARER_TOKEN_BACKEND}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    id: user_profile.sub,
-                    email: user_profile.email
-                })
-            });
-
-            let new_user = await createUser;
-            console.log('User created successfully:', new_user);
-
-    };
+    throw redirect(303, '/secure');
     } catch (err) {
-        console.error('', err);
+        if (isRedirect(err)) throw err;
+        console.error('Auth error:', err);
         throw redirect(302, '/');
-    }};
+    }
+};
