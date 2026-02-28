@@ -20,6 +20,14 @@
   --font-kitty-cutes: 'Kitty Cutes', cursive;
 }
 
+<<<<<<< HEAD
 body{
   background-image: url('/background.webp');
 }
+=======
+body {
+    background-color: #f8d4d1;
+    background-image: radial-gradient(circle, #e8c4c1 10px, transparent 20px);
+    background-size: 20px 20px;
+}
+>>>>>>> 516ba8510981a5e99614b20ca58c3ddbdb8c5768
