@@ -1,2 +1,25 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
+
+@font-face {
+  font-family: 'Cattie';
+  src: url('/Cattie-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Kitty Cutes';
+  src: url('/kitty-cutes.regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+@theme {
+  --font-cattie: 'Cattie', cursive;
+  --font-kitty-cutes: 'Kitty Cutes', cursive;
+}
+
+body{
+  background-image: url('/background.webp');
+}

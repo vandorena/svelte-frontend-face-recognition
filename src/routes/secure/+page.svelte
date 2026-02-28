@@ -1,34 +1,9 @@
 <script>
   let video_source = $state(null);
   let loading = $state(false);
-  let frameCount = 0;
+  let show_video = $state(false);
 
-  const capture_frame = () => {
-    if (!video_source || video_source.paused || video_source.ended) return;
-
-    frameCount++;
-
-    if (frameCount % 50 === 0 && video_source.videoWidth > 0) {
-      const canvas = document.createElement("canvas");
-      canvas.width = video_source.videoWidth;
-      canvas.height = video_source.videoHeight;
-      const canvas_context = canvas.getContext("2d");
-      
-      if (canvas_context) {
-        canvas_context.drawImage(video_source, 0, 0, canvas.width, canvas.height);
-        const base64 = canvas.toDataURL("image/jpeg");
-        const picture_as_form = new FormData();
-        picture_as_form.append("image", base64);
-        fetch("?/logFrame", {
-          method: "POST",
-          body: picture_as_form,
-        }).catch(err => console.error("Error sending frame:", err));
-      }
-    }
-    requestAnimationFrame(capture_frame);
-  };
-
-  const webcam_video = async () => {
+  const start_camera = async () => {
     try {
       loading = true;
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -36,21 +11,51 @@
       });
       video_source.srcObject = stream;
       video_source.play();
-      video_source.onloadeddata = () => {
-        requestAnimationFrame(capture_frame);
-      };
-
+      show_video = true;
       loading = false;
     } catch (error) {
       console.log(error);
+      loading = false;
+    }
+  };
+
+  const stop_camera = () => {
+    if (video_source && video_source.srcObject) {
+      const tracks = video_source.srcObject.getTracks();
+      tracks.forEach(track => track.stop());
+      video_source.srcObject = null;
+      show_video = false;
+    }
+  };
+
+  const toggle_camera = () => {
+    if (show_video) {
+        stop_camera();
+    } else {
+        start_camera();
     }
   };
 </script>
 
-<div>
+
+<div class="flex flex-col items-center justify-center min-h-screen gap-4">
   {#if loading}
-    <h1>LOADING</h1>
+    <h1 class="text-6xl text-green-900 [-webkit-text-stroke:1px_theme('colors.amber.300')] font-cattie">LOADING...</h1>
   {/if}
-  <video bind:this={video_source}></video>
-  <button onclick={webcam_video}>CLICK</button>
+  
+  <div class="relative overflow-hidden">
+    <video 
+      bind:this={video_source} 
+      class={show_video ? "w-full max-w-2xl border-green-900 border-8 rounded-md" : "w-full max-w-2xl"}
+      autoplay 
+      playsinline
+    ></video>
+  </div>
+
+  <button 
+    onclick={toggle_camera}
+    class="text-6xl text-green-900 [-webkit-text-stroke:1px_theme('colors.amber.300')] bg-green-800 px-10 py-4 mb-2 rounded-sm font-kitty-cutes"
+  >
+    {show_video ? "Stop Camera" : "Start Camera"}
+  </button>
 </div>
