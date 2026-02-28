@@ -1,8 +1,13 @@
 import { redirect, isRedirect, isHttpError } from '@sveltejs/kit';
-import { HC_OAUTH_CLIENT_SECRET, BEARER_TOKEN_BACKEND, BACKEND_DOMAIN_NAME, ENCRYPTION_KEY, GOOGLE_CLIENT_SECRET } from '$env/static/private';
-import { PUBLIC_GOOGLE_CLIENT_ID, PUBLIC_GOOGLE_REDIRECT_URI, PUBLIC_HC_OAUTH_CLIENT_ID, PUBLIC_HC_OAUTH_REDIRECT_URL } from '$env/static/public';
+import { dev } from '$app/environment';
+import { BEARER_TOKEN_BACKEND, BACKEND_DOMAIN_NAME, ENCRYPTION_KEY, GOOGLE_CLIENT_SECRET } from '$env/static/private';
+import { PUBLIC_GOOGLE_CLIENT_ID, PUBLIC_GOOGLE_REDIRECT_URI } from '$env/static/public';
 import type { PageServerLoad } from './$types';
 import { createCipheriv, randomBytes } from 'crypto';
+
+if (dev) {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
 
 function hashUserID(userID: string): string {
     const iv = randomBytes(16);
@@ -12,7 +17,7 @@ function hashUserID(userID: string): string {
     return iv.toString('hex') + ':' + encrypted;
 }
 
-export const load: PageServerLoad = async ({ url, cookies }) => {
+export const load: PageServerLoad = async ({ url, cookies, fetch }) => {
     const code = url.searchParams.get('code');
     const error = url.searchParams.get('error');
     const errorDescription = url.searchParams.get('error_description');
@@ -53,107 +58,49 @@ export const load: PageServerLoad = async ({ url, cookies }) => {
     const data = await tokenResponse.json();
     const accessToken = data.access_token;
 
-    const user_info = await fetch(`https://${BACKEND_DOMAIN_NAME}/users/by-slack/${encodeURIComponent(userIDV.identity.slack_id)}`, {
+    const user_info = await fetch(`https://openidconnect.googleapis.com/v1/userinfo`, {
             headers: {
-                'Authorization': `${BEARER_TOKEN_BACKEND}`
+                'Authorization': `Bearer ${accessToken}`
             }
         });
 
-        if (!getCompositePrimaryKey.ok) {
-            console.error('Failed to fetch user from IDV');
+        if (!user_info.ok) {
+            console.error('Failed to fetch user info from Google');
             throw redirect(302, '/');
         }
 
-        const userIDV = await getCompositePrimaryKey.json();
-        console.log('User fetched successfully from IDV:', userIDV);
+        const user_profile = await user_info.json();
+        console.log('User fetched successfully from Google:', user_profile);
 
-        const userResponse = await fetch(`https://${BACKEND_DOMAIN_NAME}/users/by-slack/${encodeURIComponent(userIDV.identity.slack_id)}`, {
+        const userResponse = await fetch(`http://${BACKEND_DOMAIN_NAME}/users/${encodeURIComponent(user_profile.sub)}`, {
             headers: {
                 'Authorization': `${BEARER_TOKEN_BACKEND}`
             }
         });
 
-        let user = await userResponse.json();
+        let user = await userResponse;
 
-        if (!user || !user.user_id) {
-            console.log('User not found for slack_id, creating new user');
-            
-            const createUserResponse = await fetch(`https://${BACKEND_DOMAIN_NAME}/users`, {
+        console.log(user)
+
+        if (userResponse.status === 422 || userResponse.status === 503) {
+            console.log('User not found for sub, creating new user');
+            const createUser = await fetch(`http://${BACKEND_DOMAIN_NAME}/users`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `${BEARER_TOKEN_BACKEND}`,
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    first_name: userIDV.identity.first_name || '',
-                    last_name: userIDV.identity.last_name || '',
-                    slack_id: userIDV.identity.slack_id || '',
-                    email: userIDV.identity.primary_email,
-                    is_admin: false,
-                    address_line_1: userIDV.identity.addresses?.[0]?.line_1 || '',
-                    address_line_2: userIDV.identity.addresses?.[0]?.line_2 || '',
-                    city: userIDV.identity.addresses?.[0]?.city || '',
-                    state: userIDV.identity.addresses?.[0]?.state || '',
-                    country: userIDV.identity.addresses?.[0]?.country_code || '',
-                    post_code: userIDV.identity.addresses?.[0]?.postal_code || '',
-                    birthday: new Date().toISOString()
+                    id: user_profile.sub,
+                    email: user_profile.email
                 })
             });
 
-            if (!createUserResponse.ok) {
-                console.error('Failed to create user');
-                throw redirect(302, '/?error=' + encodeURIComponent('Error creating user, you may need to update your IDV settings in Hack Club Account'));
-            }
+            let new_user = await createUser;
+            console.log('User created successfully:', new_user);
 
-            user = await createUserResponse.json();
-        }
-
-        if (user && user.user_id && user.first_login) {
-            try {
-                const patchResponse = await fetch(`https://${BACKEND_DOMAIN_NAME}/users/${user.user_id}`, {
-                    method: 'PATCH',
-                    headers: {
-                        'Authorization': `${BEARER_TOKEN_BACKEND}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        first_name: userIDV.identity.first_name || '',
-                        last_name: userIDV.identity.last_name || '',
-                        slack_id: userIDV.identity.slack_id || '',
-                        email: userIDV.identity.primary_email,
-                        is_admin: user.is_admin ?? false,
-                        address_line_1: userIDV.identity.addresses?.[0]?.line_1 || '',
-                        address_line_2: userIDV.identity.addresses?.[0]?.line_2 || '',
-                        city: userIDV.identity.addresses?.[0]?.city || '',
-                        state: userIDV.identity.addresses?.[0]?.state || '',
-                        country: userIDV.identity.addresses?.[0]?.country_code || '',
-                        post_code: userIDV.identity.addresses?.[0]?.postal_code || '',
-                        birthday: user.birthday || new Date().toISOString()
-                    })
-                });
-
-                if (!patchResponse.ok) {
-                    console.error('Failed to patch first_login user data');
-                } else {
-                    const updatedUser = await patchResponse.json();
-                    user = updatedUser;
-                }
-            } catch (e) {
-                console.error('Error patching first_login user', e);
-            }
-        }
-
-        const hashedUserID = hashUserID(user.user_id);
-        cookies.set('userID', hashedUserID, { path: '/', httpOnly: true, secure: true, sameSite: 'lax' });
-        cookies.set('accessToken', accessToken, { path: '/', httpOnly: true, secure: true, sameSite: 'lax' });
-        throw redirect(302, '/whiteboard');
-
+    };
     } catch (err) {
-        // If this is an intentional redirect or an HTTP error from SvelteKit, rethrow it untouched
-        if (isRedirect(err) || isHttpError(err)) {
-            throw err;
-        }
-        console.error('Error exchanging code for token:', err);
+        console.error('', err);
         throw redirect(302, '/');
-    }
-};
+    }};
