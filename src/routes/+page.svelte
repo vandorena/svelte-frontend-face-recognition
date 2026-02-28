@@ -5,6 +5,7 @@
   let frame_count = 0;
   let animation_frame_id;
   let processing = false;
+  let identified_name = $state(null);
 
   const process_frame = async () => {
     if (!show_video) return;
@@ -31,6 +32,7 @@
 
             if (data.found) {
                 if (data.identified) {
+                    identified_name = data.name;
                     console.log(`Identified: ${data.name} (Confidence: ${data.confidence})`);
                 } else {
                     console.log('Face found but not identified.');
@@ -126,5 +128,9 @@
     class="text-6xl text-green-900 [-webkit-text-stroke:1px_theme('colors.amber.300')] bg-green-800 px-10 py-4 mb-2 rounded-sm font-kitty-cutes"
   >
     {show_video ? "Stop Camera" : "Start Camera"}
+  
+  {#if identified_name}
+    <h2 class="text-4xl text-green-900 font-bold mt-4">Identified: {identified_name}</h2>
+  {/if}
   </button>
 </div>

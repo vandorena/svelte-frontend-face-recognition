@@ -5,8 +5,9 @@ const API_SECRET = env.FACEPP_API_SECRET;
 const FACESET_TOKEN = 'svelte_faces_v1'; // Hardcoded for simplicity, or use env
 
 async function request(endpoint: string, formData: FormData, retryCount = 0) {
-    formData.append('api_key', API_KEY);
-    formData.append('api_secret', API_SECRET);
+    // Start with authorization
+    formData.set('api_key', API_KEY);
+    formData.set('api_secret', API_SECRET);
 
     const response = await fetch(`https://api-us.faceplusplus.com/facepp/v3/${endpoint}`, {
         method: 'POST',
@@ -17,28 +18,10 @@ async function request(endpoint: string, formData: FormData, retryCount = 0) {
 
     if (data.error_message && data.error_message.includes('CONCURRENCY_LIMIT_EXCEEDED')) {
         if (retryCount < 3) {
-            console.log(`Concurrency limit hit for ${endpoint}. Retrying in 1s... (Attempt ${retryCount + 1})`);
-            await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
-            // FormData is consumed, need to recreate or append again? 
-            // Fetch doesn't consume FormData logic-wise but it might be tricky.
-            // Better to just recursively call request logic. 
-            // But we modified formData in place. "append" adds to it.
-            // So we should probably pass a fresh one or just re-append if it wasn't already there?
-            // Actually, we are appending repeatedly to the same FormData object if we just pass it back.
-            // Let's create a new FormData in the wrapper or just realize that `append` with same key adds multiple entries, which might be bad.
-            
-            // To fix this cleanly without rewriting everything:
-            // Since we passed formData into this function, it already has the specific params.
-            // We just appended api_key and api_secret.
-            // If we retry, we should probably start fresh or just not re-append if they are there.
-            // Simplest fix: The caller constructs the FormData. We append auth.
-            // If we retry, we are calling `request` again.
-            // We need to NOT append api_key again if it's already there
-             if (formData.has('api_key')) {
-                 formData.delete('api_key');
-                 formData.delete('api_secret');
-             }
-             return request(endpoint, formData, retryCount + 1);
+            const delay = 1000 * Math.pow(2, retryCount); // Exponential backoff: 1s, 2s, 4s
+            console.log(`Concurrency limit hit for ${endpoint}. Retrying in ${delay}ms... (Attempt ${retryCount + 1})`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return request(endpoint, formData, retryCount + 1);
         }
     }
 
